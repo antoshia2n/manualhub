@@ -433,12 +433,24 @@ function AssetBadge({ asset }) {
 // ─────────────────────────────────────────────
 function AssetCard({ asset, onEdit, onDelete }) {
   const cfg = ASSET_TYPES[asset.type] ?? ASSET_TYPES.prompt;
-  const [menu, setMenu] = useState(false);
+  const [menu,     setMenu]     = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [copied,   setCopied]   = useState(false);
   const menuRef = useRef(null);
   useClickOutside(menuRef, useCallback(() => setMenu(false), []));
 
+  const canCopy = asset.content && ["prompt","template","knowhow"].includes(asset.type);
+  const isLink  = asset.url && ["link","app"].includes(asset.type);
+
+  const copy = e => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(asset.content).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
-    <div style={{ ...T.card, borderLeft: `3px solid ${cfg.color}` }}>
+    <div style={{ ...T.card, borderLeft: `3px solid ${cfg.color}`, cursor: "pointer" }} onClick={() => setExpanded(v => !v)}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div style={{ background: cfg.bg, borderRadius: 8, padding: 8, flexShrink: 0 }}>
           <Ic n={cfg.icon} s={16} c={cfg.color} />
@@ -448,30 +460,54 @@ function AssetCard({ asset, onEdit, onDelete }) {
             <span style={{ fontSize: 10, fontWeight: 800, color: cfg.color, background: cfg.bg, borderRadius: 4, padding: "2px 7px", whiteSpace: "nowrap" }}>{cfg.label}</span>
             {(asset.tags || []).map(t => <Tag key={t} label={t} />)}
           </div>
-          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4, lineHeight: 1.4 }}>{asset.title || "（無題）"}</div>
-          {asset.description && <p style={{ fontSize: 12, color: C.textSm, margin: "0 0 6px", lineHeight: 1.5 }}>{asset.description}</p>}
-          {asset.content && (
-            <pre style={{ ...T.tplPre, margin: "0 0 8px", maxHeight: 80, fontSize: 11 }}>{asset.content}</pre>
-          )}
-          {asset.url && (
-            <a href={asset.url} target="_blank" rel="noreferrer" style={{ ...T.linkBtn, display: "inline-flex", maxWidth: "100%", overflow: "hidden" }}>
-              <Ic n="ext" s={11} c={C.blue} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.url.slice(0, 40)}{asset.url.length > 40 ? "…" : ""}</span>
-            </a>
-          )}
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 2, lineHeight: 1.4 }}>{asset.title || "（無題）"}</div>
+          {asset.description && <p style={{ fontSize: 12, color: C.textSm, margin: 0, lineHeight: 1.5 }}>{asset.description}</p>}
         </div>
-        <div style={{ position: "relative", flexShrink: 0 }} ref={menuRef}>
-          <button style={T.iconBtn} onClick={() => setMenu(v => !v)}><Ic n="dots" s={14} c={C.muted} /></button>
-          {menu && (
-            <div style={T.dropMenu}>
-              <button style={T.dropItem} onClick={() => { onEdit(asset); setMenu(false); }}><Ic n="edit" s={13} />編集</button>
-              <div style={T.dropDivider} />
-              <button style={{ ...T.dropItem, color: C.red }} onClick={() => { onDelete(asset.id); setMenu(false); }}>
-                <Ic n="trash" s={13} c={C.red} />削除
-              </button>
-            </div>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <Ic n={expanded ? "chevU" : "chevD"} s={14} c={C.muted} />
+          <div style={{ position: "relative" }} ref={menuRef} onClick={e => e.stopPropagation()}>
+            <button style={T.iconBtn} onClick={() => setMenu(v => !v)}><Ic n="dots" s={14} c={C.muted} /></button>
+            {menu && (
+              <div style={T.dropMenu}>
+                <button style={T.dropItem} onClick={() => { onEdit(asset); setMenu(false); }}><Ic n="edit" s={13} />編集</button>
+                <div style={T.dropDivider} />
+                <button style={{ ...T.dropItem, color: C.red }} onClick={() => { onDelete(asset.id); setMenu(false); }}>
+                  <Ic n="trash" s={13} c={C.red} />削除
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {expanded && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
+          {asset.content && (
+            <pre style={{ ...T.tplPre, marginBottom: 10, maxHeight: 240, fontSize: 12 }}>{asset.content}</pre>
+          )}
+          {asset.url && (
+            <a href={asset.url} target="_blank" rel="noreferrer"
+              style={{ ...T.linkBtn, display: "inline-flex", marginBottom: 10, maxWidth: "100%", overflow: "hidden" }}>
+              <Ic n="ext" s={11} c={C.blue} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.url}</span>
+            </a>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {canCopy && (
+              <button style={{ ...T.copyBtn, ...(copied ? T.copyBtnOk : {}), padding: "7px 16px", fontSize: 13 }} onClick={copy}>
+                <Ic n={copied ? "check" : "copy"} s={14} c={copied ? C.green : C.accent} />
+                {copied ? "コピー完了！" : "コピー"}
+              </button>
+            )}
+            {isLink && (
+              <a href={asset.url} target="_blank" rel="noreferrer" style={{ ...T.linkBtn, padding: "7px 16px", fontSize: 13 }} onClick={e => e.stopPropagation()}>
+                <Ic n="ext" s={13} c={C.blue} />開く
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 10, paddingTop: 8, fontSize: 11, color: C.muted }}>
         {fmtDate(asset.updatedAt)} 更新
       </div>
