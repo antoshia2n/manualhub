@@ -444,18 +444,18 @@ function AssetCard({ asset, onEdit, onDelete }) {
           <Ic n={cfg.icon} s={16} c={cfg.color} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, color: cfg.color, background: cfg.bg, borderRadius: 4, padding: "1px 6px" }}>{cfg.label}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: cfg.color, background: cfg.bg, borderRadius: 4, padding: "2px 7px", whiteSpace: "nowrap" }}>{cfg.label}</span>
             {(asset.tags || []).map(t => <Tag key={t} label={t} />)}
           </div>
-          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>{asset.title || "（無題）"}</div>
+          <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4, lineHeight: 1.4 }}>{asset.title || "（無題）"}</div>
           {asset.description && <p style={{ fontSize: 12, color: C.textSm, margin: "0 0 6px", lineHeight: 1.5 }}>{asset.description}</p>}
           {asset.content && (
             <pre style={{ ...T.tplPre, margin: "0 0 8px", maxHeight: 80, fontSize: 11 }}>{asset.content}</pre>
           )}
           {asset.url && (
-            <a href={asset.url} target="_blank" rel="noreferrer" style={{ ...T.linkBtn, display: "inline-flex" }}>
-              <Ic n="ext" s={11} c={C.blue} />{asset.url.slice(0, 40)}{asset.url.length > 40 ? "…" : ""}
+            <a href={asset.url} target="_blank" rel="noreferrer" style={{ ...T.linkBtn, display: "inline-flex", maxWidth: "100%", overflow: "hidden" }}>
+              <Ic n="ext" s={11} c={C.blue} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asset.url.slice(0, 40)}{asset.url.length > 40 ? "…" : ""}</span>
             </a>
           )}
         </div>
@@ -648,6 +648,202 @@ function AssetList({ assets, onSave, onDelete, onClose }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// AiCreateModal — AI-assisted manual/asset creation
+// ─────────────────────────────────────────────
+const AI_SYSTEM = `あなたはマニュアル管理ツール「Manual Hub」のコンテンツ作成アシスタントです。
+ユーザーの説明をもとに、マニュアルまたはアセットのJSON草案を作成してください。
+
+マニュアルの場合のJSON形式:
+{
+  "kind": "manual",
+  "title": "タイトル",
+  "description": "概要説明",
+  "tags": ["タグ1", "タグ2"],
+  "steps": [
+    {
+      "title": "手順タイトル",
+      "explanation": "説明文",
+      "tips": [{"type": "tip|warn|note", "text": "内容"}],
+      "links": [{"label": "ラベル", "url": "https://..."}],
+      "template": "テンプレート文章（あれば）",
+      "checklist": [{"text": "チェック項目"}]
+    }
+  ]
+}
+
+アセットの場合のJSON形式:
+{
+  "kind": "asset",
+  "type": "prompt|template|link|app|knowhow",
+  "title": "タイトル",
+  "description": "説明",
+  "content": "本文（promptやtemplateの場合）",
+  "url": "URL（linkやappの場合）",
+  "tags": ["タグ1"]
+}
+
+必ずJSONのみを返してください。マークダウンのコードブロックや説明文は不要です。`;
+
+function AiCreateModal({ onSave, onCancel }) {
+  const [prompt,   setPrompt]   = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [result,   setResult]   = useState(null); // parsed proposal
+  const [error,    setError]    = useState(null);
+  const [apiKey,   setApiKey]   = useState(() => localStorage.getItem("mh-apikey") || "");
+  const [showKey,  setShowKey]  = useState(!localStorage.getItem("mh-apikey"));
+
+  const generate = async () => {
+    if (!prompt.trim() || !apiKey.trim()) return;
+    localStorage.setItem("mh-apikey", apiKey.trim());
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const r = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompt.trim(), apiKey: apiKey.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "生成に失敗しました");
+      setResult(data.result);
+    } catch (e) {
+      setError(e.message);
+    } finally { setLoading(false); }
+  };
+
+  const confirm = () => {
+    if (!result) return;
+    if (result.kind === "manual") {
+      const m = {
+        ...mkManual(),
+        title:       result.title || "",
+        description: result.description || "",
+        tags:        result.tags || [],
+        steps: (result.steps || []).map(s => ({
+          ...mkStep(),
+          title:       s.title || "",
+          explanation: s.explanation || "",
+          tips:        (s.tips || []).map(t => ({ id: uid(), type: t.type || "tip", text: t.text || "" })),
+          links:       (s.links || []).map(l => ({ id: uid(), label: l.label || "", url: l.url || "" })),
+          template:    s.template || "",
+          checklist:   (s.checklist || []).map(c => ({ id: uid(), text: c.text || "" })),
+        })),
+      };
+      onSave("manual", m);
+    } else {
+      const a = {
+        ...mkAsset(),
+        type:        result.type || "prompt",
+        title:       result.title || "",
+        description: result.description || "",
+        content:     result.content || "",
+        url:         result.url || "",
+        tags:        result.tags || [],
+      };
+      onSave("asset", a);
+    }
+  };
+
+  return (
+    <div style={T.overlay}>
+      <div style={{ ...T.modal, width: 560, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div style={{ background: C.purpleBg, borderRadius: 8, padding: 8 }}><Ic n="lightbulb" s={18} c={C.purple} /></div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 900 }}>AIで作成</div>
+            <div style={{ fontSize: 12, color: C.muted }}>説明を入力するとマニュアルまたはアセットの草案を生成します</div>
+          </div>
+        </div>
+
+        {showKey && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={T.fLabel}>Anthropic API Key</label>
+            <input style={{ ...T.inp, fontFamily: "monospace", fontSize: 12 }}
+              type="password" value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="sk-ant-..." />
+            <p style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>ブラウザのlocalStorageに保存されます。一度入力すれば次回不要。</p>
+          </div>
+        )}
+        {!showKey && (
+          <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: C.green }}>✓ APIキー設定済み</span>
+            <button style={{ ...T.iconBtn, fontSize: 11, color: C.muted }} onClick={() => { setShowKey(true); setApiKey(""); localStorage.removeItem("mh-apikey"); }}>変更</button>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={T.fLabel}>何を作りたいか説明してください</label>
+          <textarea
+            style={{ ...T.inp, minHeight: 100, resize: "vertical" }}
+            value={prompt} onChange={e => setPrompt(e.target.value)}
+            placeholder={"例）新入社員向けのSlack利用マニュアル\n例）ChatGPTで議事録を作成するプロンプト\n例）Googleドライブへのリンク集"}
+            autoFocus
+          />
+        </div>
+
+        {error && (
+          <div style={{ background: "rgba(185,28,28,0.1)", border: "1px solid rgba(185,28,28,0.3)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.red, marginBottom: 14 }}>
+            ⚠ {error}
+          </div>
+        )}
+
+        {result && (
+          <div style={{ background: C.paper, border: `1px solid ${C.border}`, borderRadius: 10, padding: "14px", marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, marginBottom: 10, letterSpacing: "0.05em" }}>
+              生成結果 — {result.kind === "manual" ? `マニュアル（${(result.steps||[]).length}手順）` : `アセット（${ASSET_TYPES[result.type]?.label || result.type}）`}
+            </div>
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>{result.title}</div>
+            {result.description && <p style={{ fontSize: 12, color: C.textSm, margin: "0 0 8px", lineHeight: 1.5 }}>{result.description}</p>}
+            {result.kind === "manual" && (result.steps || []).map((s, i) => (
+              <div key={i} style={{ fontSize: 12, padding: "6px 0", borderTop: `1px solid ${C.border}`, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ ...T.stepEdNum, flexShrink: 0 }}>{i + 1}</span>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{s.title}</div>
+                  {s.explanation && <div style={{ color: C.textSm, marginTop: 2, lineHeight: 1.5 }}>{s.explanation.slice(0, 80)}{s.explanation.length > 80 ? "…" : ""}</div>}
+                </div>
+              </div>
+            ))}
+            {result.kind === "asset" && result.content && (
+              <pre style={{ ...T.tplPre, fontSize: 12, maxHeight: 120 }}>{result.content}</pre>
+            )}
+            {(result.tags || []).length > 0 && (
+              <div style={{ marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {result.tags.map(t => <Tag key={t} label={t} />)}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+          <button style={T.btnBack} onClick={onCancel}>キャンセル</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {result && (
+              <button style={T.btnBack} onClick={() => setResult(null)}>
+                <Ic n="refresh" s={13} />再生成
+              </button>
+            )}
+            {!result ? (
+              <button
+                style={{ ...T.btnPrimary, opacity: (prompt.trim() && apiKey.trim()) ? 1 : 0.4, display: "flex", alignItems: "center", gap: 6 }}
+                disabled={!prompt.trim() || !apiKey.trim() || loading}
+                onClick={generate}>
+                {loading
+                  ? <><span style={{ animation: "spin 1s linear infinite", display: "flex" }}><Ic n="refresh" s={14} c="#1a1a2e" /></span>生成中…</>
+                  : <><Ic n="lightbulb" s={14} c="#1a1a2e" />生成する</>}
+              </button>
+            ) : (
+              <button style={{ ...T.btnSave, display: "flex", alignItems: "center", gap: 6 }} onClick={confirm}>
+                <Ic n="check" s={14} c="#fff" />この内容で保存
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1415,6 +1611,11 @@ export default function App() {
   const [syncMenu,   setSyncMenu]   = useState(false);
   const [syncing,    setSyncing]    = useState(null); // "push" | "pull" | null
   const [syncMsg,    setSyncMsg]    = useState(null); // { ok, text }
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [showGlobalResults, setShowGlobalResults] = useState(false);
+  const globalSearchRef = useRef(null);
+  useClickOutside(globalSearchRef, useCallback(() => setShowGlobalResults(false), []));
   const syncMenuRef = useRef(null);
   useClickOutside(syncMenuRef, useCallback(() => setSyncMenu(false), []));
 
@@ -1563,8 +1764,7 @@ export default function App() {
     } finally { setSyncing(null); }
   }, [manuals, persist, showSyncMsg]);
 
-  const handleAssetSave = useCallback(a => {
-    const exists = assets.some(x => x.id === a.id);
+  const handleAssetSave = useCallback(a => {    const exists = assets.some(x => x.id === a.id);
     persistAssets(exists ? assets.map(x => x.id === a.id ? a : x) : [a, ...assets]);
   }, [assets, persistAssets]);
 
@@ -1580,6 +1780,29 @@ export default function App() {
     }));
     persist(updated);
   }, [assets, persistAssets, manuals, persist]);
+
+  const handleAiSave = useCallback((kind, data) => {
+    if (kind === "manual") {
+      persist([data, ...manuals]);
+      setShowAiModal(false);
+      setActiveId(data.id);
+      setPage("detail");
+    } else {
+      persistAssets([data, ...assets]);
+      setShowAiModal(false);
+      setPage("assets");
+    }
+  }, [manuals, assets, persist, persistAssets]);
+
+  const globalResults = useMemo(() => {
+    const q = globalSearch.trim().toLowerCase();
+    if (!q || q.length < 1) return null;
+    const mResults = manuals.filter(m => !m.archived && searchManual(m, q)).slice(0, 5);
+    const aResults = assets.filter(a =>
+      [a.title, a.description, a.content, ...(a.tags||[])].some(f => f?.toLowerCase().includes(q))
+    ).slice(0, 5);
+    return { manuals: mResults, assets: aResults };
+  }, [globalSearch, manuals, assets]);
 
   const activeManual = useMemo(() => manuals.find(m => m.id === activeId), [manuals, activeId]);
 
@@ -1600,6 +1823,12 @@ export default function App() {
         <PinModal title="編集のためにPINを入力" sub="このマニュアルは編集ロックされています。"
           onCancel={() => setPinModal(null)}
           onConfirm={pin => { if (pin === pinModal.manual.pin) pinModal.onSuccess(); else alert("PINが違います"); }} />
+      )}
+
+      {showAiModal && (
+        <AiCreateModal
+          onSave={handleAiSave}
+          onCancel={() => setShowAiModal(false)} />
       )}
 
       {/* ── Header ── */}
@@ -1631,6 +1860,59 @@ export default function App() {
             </button>
           </nav>
         </div>
+
+        {/* ── Global Search ── */}
+        <div style={{ flex: 1, maxWidth: 340, position: "relative" }} ref={globalSearchRef}>
+          <div style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, padding: "7px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+            <Ic n="search" s={13} c="rgba(255,255,255,0.4)" />
+            <input
+              style={{ background: "none", border: "none", outline: "none", color: "#fff", fontSize: 13, flex: 1, minWidth: 0 }}
+              placeholder="横断検索…"
+              value={globalSearch}
+              onChange={e => { setGlobalSearch(e.target.value); setShowGlobalResults(true); }}
+              onFocus={() => setShowGlobalResults(true)}
+            />
+            {globalSearch && (
+              <button style={{ ...T.iconBtn, padding: 0 }} onClick={() => { setGlobalSearch(""); setShowGlobalResults(false); }}>
+                <Ic n="x" s={12} c="rgba(255,255,255,0.4)" />
+              </button>
+            )}
+          </div>
+          {showGlobalResults && globalResults && (globalResults.manuals.length > 0 || globalResults.assets.length > 0) && (
+            <div style={{ position: "absolute", top: "calc(100% + 8px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 500, overflow: "hidden" }}>
+              {globalResults.manuals.length > 0 && (
+                <>
+                  <div style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 800, color: C.muted, letterSpacing: "0.06em" }}>マニュアル</div>
+                  {globalResults.manuals.map(m => (
+                    <button key={m.id} style={{ ...T.dropItem, width: "100%" }} onClick={() => { setActiveId(m.id); setPage("detail"); setGlobalSearch(""); setShowGlobalResults(false); }}>
+                      <Ic n="book" s={13} c={C.accent} /><span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {globalResults.assets.length > 0 && (
+                <>
+                  <div style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 800, color: C.muted, letterSpacing: "0.06em", borderTop: globalResults.manuals.length > 0 ? `1px solid ${C.border}` : "none" }}>アセット</div>
+                  {globalResults.assets.map(a => {
+                    const cfg = ASSET_TYPES[a.type] ?? ASSET_TYPES.prompt;
+                    return (
+                      <button key={a.id} style={{ ...T.dropItem, width: "100%" }} onClick={() => { setPage("assets"); setGlobalSearch(""); setShowGlobalResults(false); }}>
+                        <Ic n={cfg.icon} s={13} c={cfg.color} /><span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</span>
+                        <span style={{ fontSize: 10, color: cfg.color, background: cfg.bg, borderRadius: 4, padding: "1px 6px", flexShrink: 0 }}>{cfg.label}</span>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          )}
+          {showGlobalResults && globalSearch && globalResults && globalResults.manuals.length === 0 && globalResults.assets.length === 0 && (
+            <div style={{ position: "absolute", top: "calc(100% + 8px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 500, padding: "16px", textAlign: "center", fontSize: 13, color: C.muted }}>
+              「{globalSearch}」に一致する結果がありません
+            </div>
+          )}
+        </div>
+
         <div style={T.headerR}>
           {/* Notion sync */}
           <div style={{ position: "relative" }} ref={syncMenuRef}>
@@ -1664,6 +1946,9 @@ export default function App() {
               <Ic n="plus" s={14} c="#1a1a2e" />新規作成
             </button>
           )}
+          <button style={{ ...T.toolBtnSm, background: "rgba(109,40,217,0.15)", borderRadius: 7 }} onClick={() => setShowAiModal(true)} title="AIで作成">
+            <Ic n="lightbulb" s={15} c={C.purple} />
+          </button>
         </div>
       </div>
 
