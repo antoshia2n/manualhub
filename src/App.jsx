@@ -311,7 +311,7 @@ function TagInput({ tags, onChange }) {
       {tags.map(t => <Tag key={t} label={t} onRemove={() => onChange(tags.filter(x => x !== t))} />)}
       <div style={T.tagInputWrap}>
         <input style={T.tagInp} value={val} onChange={e => setVal(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); add(); } }}
+          onKeyDown={e => { if ((e.key === "Enter" || e.key === ",") && !e.nativeEvent.isComposing) { e.preventDefault(); add(); } }}
           placeholder="タグを追加 (Enter)" />
         {val && <button style={T.tagAddBtn} onClick={add}><Ic n="plus" s={12} c={C.accent} /></button>}
       </div>
@@ -331,7 +331,7 @@ function PinModal({ title, sub, onConfirm, onCancel }) {
           type="password" maxLength={8} value={val} autoFocus
           placeholder="••••"
           onChange={e => setVal(e.target.value.replace(/\D/g, ""))}
-          onKeyDown={e => e.key === "Enter" && val.length >= 4 && onConfirm(val)}
+          onKeyDown={e => e.key === "Enter" && !e.nativeEvent.isComposing && val.length >= 4 && onConfirm(val)}
         />
         <p style={{ fontSize: 11, color: C.muted, textAlign: "center", marginTop: 6 }}>4〜8桁の数字</p>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
@@ -1275,7 +1275,7 @@ function StepEd({ step, index, total, manuals, assets, curId, onChange, onRemove
               </select>
               <input style={{ ...T.inp, flex: 1 }} value={newTip.text}
                 onChange={e => setNewTip(t => ({ ...t, text: e.target.value }))}
-                onKeyDown={e => e.key === "Enter" && addTip()} placeholder="内容を入力…" />
+                onKeyDown={e => e.key === "Enter" && !e.nativeEvent.isComposing && addTip()} placeholder="内容を入力…" />
               <button style={T.addBtn} onClick={addTip}>追加</button>
             </div>
             {step.tips.map((t, i) => (
@@ -1329,7 +1329,7 @@ function StepEd({ step, index, total, manuals, assets, curId, onChange, onRemove
                 onChange={e => setNewLink(l => ({ ...l, label: e.target.value }))} placeholder="ラベル" />
               <input style={{ ...T.inp, flex: 1 }} value={newLink.url}
                 onChange={e => setNewLink(l => ({ ...l, url: e.target.value }))}
-                onKeyDown={e => e.key === "Enter" && addLink()} placeholder="URL" />
+                onKeyDown={e => e.key === "Enter" && !e.nativeEvent.isComposing && addLink()} placeholder="URL" />
               <button style={{ ...T.addBtn, borderColor: C.blue + "55", color: C.blue, background: C.blueBg }} onClick={addLink}>追加</button>
             </div>
             {step.links.map((l, i) => (
@@ -1349,7 +1349,7 @@ function StepEd({ step, index, total, manuals, assets, curId, onChange, onRemove
             <div style={T.addRow}>
               <input style={{ ...T.inp, flex: 1 }} value={newCheck}
                 onChange={e => setNewCheck(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && addCheck()} placeholder="チェック項目を入力…" />
+                onKeyDown={e => e.key === "Enter" && !e.nativeEvent.isComposing && addCheck()} placeholder="チェック項目を入力…" />
               <button style={{ ...T.addBtn, borderColor: C.green + "55", color: C.green, background: C.greenBg }} onClick={addCheck}>追加</button>
             </div>
             {step.checklist.map((c, i) => (
